@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Business Plateforme</title>
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f2f4f8;
+    color: #1d2433;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  main {
+    width: 100%;
+    max-width: 380px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; text-align: center; }
+  .sous-titre { margin: 0 0 20px; text-align: center; color: #5b6475; font-size: 14px; }
+  label { display: block; margin: 12px 0 4px; font-size: 14px; font-weight: bold; }
+  input {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    border: 1px solid #c3c9d6;
+    border-radius: 8px;
+  }
+  button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 12px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .principal { background: #2563eb; color: #ffffff; }
+  .secondaire { background: #e5e9f2; color: #1d2433; }
+  .lien { background: none; color: #2563eb; font-size: 14px; margin-top: 8px; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  #message {
+    margin-top: 14px;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    text-align: center;
+  }
+  .erreur { background: #fde8e8; color: #9b1c1c; }
+  .ok { background: #e3f6e8; color: #166534; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI Business</h1>
+  <p class="sous-titre">Plateforme de vente avec agents IA</p>
+
+  <section id="vue-connexion">
+    <form id="formulaire">
+      <label for="email">Adresse email</label>
+      <input id="email" type="email" autocomplete="email" required>
+
+      <label for="mdp">Mot de passe (6 caractères minimum)</label>
+      <input id="mdp" type="password" autocomplete="current-password" required>
+
+      <button type="submit" id="btn-connexion" class="principal">Se connecter</button>
+      <button type="button" id="btn-inscription" class="secondaire">Créer un compte</button>
+      <button type="button" id="btn-oubli" class="lien">Mot de passe oublié ?</button>
+    </form>
+  </section>
+
+  <section id="vue-tableau" hidden>
+    <p>Connecté avec :</p>
+    <p><strong id="email-connecte"></strong></p>
+    <p>Le tableau de bord arrivera à l'étape 2.</p>
+    <button type="button" id="btn-deconnexion" class="secondaire">Se déconnecter</button>
+  </section>
+
+  <div id="message" hidden></div>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB6lhVcftbstbUlbfIMQVWETZijoBCi6XI",
+  authDomain: "ai-business-agent-f8c61.firebaseapp.com",
+  projectId: "ai-business-agent-f8c61",
+  storageBucket: "ai-business-agent-f8c61.firebasestorage.app",
+  messagingSenderId: "187682280428",
+  appId: "1:187682280428:web:742a58a4e2cd96428f26c9"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+const vueConnexion = document.getElementById("vue-connexion");
+const vueTableau = document.getElementById("vue-tableau");
+const champEmail = document.getElementById("email");
+const champMdp = document.getElementById("mdp");
+const boiteMessage = document.getElementById("message");
+const emailConnecte = document.getElementById("email-connecte");
+const boutons = document.querySelectorAll("button");
+
+const erreurs = {
+  "auth/invalid-email": "Adresse email invalide.",
+  "auth/missing-password": "Entre ton mot de passe.",
+  "auth/weak-password": "Mot de passe trop court (6 caractères minimum).",
+  "auth/email-already-in-use": "Cet email a déjà un compte. Clique sur Se connecter.",
+  "auth/invalid-credential": "Email ou mot de passe incorrect.",
+  "auth/user-not-found": "Aucun compte avec cet email.",
+  "auth/wrong-password": "Mot de passe incorrect.",
+  "auth/too-many-requests": "Trop d'essais. Attends un peu puis réessaie.",
+  "auth/network-request-failed": "Problème de connexion internet.",
+  "auth/missing-email": "Entre ton adresse email."
+};
+
+function afficher(texte, type) {
+  boiteMessage.textContent = texte;
+  boiteMessage.className = type;
+  boiteMessage.hidden = false;
+}
+
+function effacerMessage() {
+  boiteMessage.hidden = true;
+  boiteMessage.textContent = "";
+}
+
+function occupe(etat) {
+  boutons.forEach(function (b) { b.disabled = etat; });
+}
+
+function texteErreur(e) {
+  return erreurs[e.code] || ("Erreur : " + (e.code || e.message));
+}
+
+document.getElementById("formulaire").addEventListener("submit", async function (ev) {
+  ev.preventDefault();
+  effacerMessage();
+  occupe(true);
+  try {
+    await signInWithEmailAndPassword(auth, champEmail.value.trim(), champMdp.value);
+  } catch (e) {
+    afficher(texteErreur(e), "erreur");
+  }
+  occupe(false);
+});
+
+document.getElementById("btn-inscription").addEventListener("click", async function () {
+  effacerMessage();
+  if (!champEmail.value.trim() || !champMdp.value) {
+    afficher("Entre ton email et ton mot de passe.", "erreur");
+    return;
+  }
+  occupe(true);
+  try {
+    await createUserWithEmailAndPassword(auth, champEmail.value.trim(), champMdp.value);
+  } catch (e) {
+    afficher(texteErreur(e), "erreur");
+  }
+  occupe(false);
+});
+
+document.getElementById("btn-oubli").addEventListener("click", async function () {
+  effacerMessage();
+  if (!champEmail.value.trim()) {
+    afficher("Entre d'abord ton email ci-dessus.", "erreur");
+    return;
+  }
+  occupe(true);
+  try {
+    await sendPasswordResetEmail(auth, champEmail.value.trim());
+    afficher("Email envoyé. Vérifie aussi tes spams.", "ok");
+  } catch (e) {
+    afficher(texteErreur(e), "erreur");
+  }
+  occupe(false);
+});
+
+document.getElementById("btn-deconnexion").addEventListener("click", async function () {
+  effacerMessage();
+  try {
+    await signOut(auth);
+  } catch (e) {
+    afficher(texteErreur(e), "erreur");
+  }
+});
+
+onAuthStateChanged(auth, function (utilisateur) {
+  if (utilisateur) {
+    emailConnecte.textContent = utilisateur.email;
+    vueConnexion.hidden = true;
+    vueTableau.hidden = false;
+    effacerMessage();
+  } else {
+    vueTableau.hidden = true;
+    vueConnexion.hidden = false;
+    champMdp.value = "";
+  }
+});
+</script>
+</body>
+  </html>
