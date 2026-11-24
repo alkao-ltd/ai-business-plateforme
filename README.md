@@ -1,1 +1,1 @@
-# ai-business-platforme
+# ai-business-plateforme
