@@ -35,13 +35,15 @@
   h1 { margin: 0 0 4px; font-size: 22px; text-align: center; }
   .sous-titre { margin: 0 0 20px; text-align: center; color: #5b6475; font-size: 14px; }
   label { display: block; margin: 12px 0 4px; font-size: 14px; font-weight: bold; }
-  input {
+  input, textarea {
     width: 100%;
     padding: 12px;
     font-size: 16px;
+    font-family: Arial, sans-serif;
     border: 1px solid #c3c9d6;
     border-radius: 8px;
   }
+  textarea { min-height: 90px; resize: vertical; }
   button {
     width: 100%;
     padding: 12px;
@@ -53,6 +55,7 @@
   }
   .principal { background: #2563eb; color: #ffffff; }
   .secondaire { background: #e5e9f2; color: #1d2433; }
+  .danger { background: #fde8e8; color: #9b1c1c; }
   .lien { background: none; color: #2563eb; font-size: 14px; margin-top: 8px; }
   button:disabled { opacity: 0.6; cursor: not-allowed; }
   #message {
@@ -110,6 +113,19 @@
     border-radius: 20px;
     color: #1d2433;
   }
+
+  .produit {
+    background: #ffffff;
+    border: 1px solid #e5e9f2;
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 8px;
+  }
+  .produit h3 { margin: 0 0 4px; font-size: 16px; }
+  .produit p { margin: 4px 0 0; font-size: 14px; color: #5b6475; word-break: break-word; }
+  .produit .prix { color: #166534; font-weight: bold; }
+  .produit a { color: #2563eb; word-break: break-all; font-size: 14px; }
+  .produit button { margin-top: 10px; padding: 8px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -141,15 +157,34 @@
 
     <h3 class="titre-section">Aperçu</h3>
     <div class="chiffres">
-      <div class="chiffre"><strong>0</strong><span>Produits</span></div>
+      <div class="chiffre"><strong id="nb-produits">0</strong><span>Produits</span></div>
       <div class="chiffre"><strong>0</strong><span>Prospects</span></div>
       <div class="chiffre"><strong>0</strong><span>Messages</span></div>
     </div>
 
+    <h3 class="titre-section">Ajouter un produit</h3>
+    <form id="form-produit">
+      <label for="p-nom">Nom du produit</label>
+      <input id="p-nom" type="text" maxlength="100" required>
+
+      <label for="p-desc">Description</label>
+      <textarea id="p-desc" maxlength="1000"></textarea>
+
+      <label for="p-prix">Prix (ex : 5000 FCFA)</label>
+      <input id="p-prix" type="text" maxlength="50">
+
+      <label for="p-lien">Lien Chariow (https://...)</label>
+      <input id="p-lien" type="url" maxlength="300">
+
+      <label for="p-cible">Pour qui est ce produit ?</label>
+      <input id="p-cible" type="text" maxlength="200">
+
+      <button type="submit" id="btn-ajout" class="principal">Enregistrer le produit</button>
+    </form>
+
     <h3 class="titre-section">Mes produits</h3>
-    <div class="carte">
-      <p>Aucun produit pour le moment.</p>
-      <span class="bientot">Ajout de produits : étape 3</span>
+    <div id="liste-produits">
+      <div class="carte"><p>Chargement...</p></div>
     </div>
 
     <h3 class="titre-section">Mes agents IA</h3>
@@ -178,6 +213,17 @@ import {
   sendPasswordResetEmail,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB6lhVcftbstbUlbfIMQVWETZijoBCi6XI",
@@ -190,6 +236,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
 const vueConnexion = document.getElementById("vue-connexion");
 const vueTableau = document.getElementById("vue-tableau");
@@ -198,6 +245,13 @@ const champMdp = document.getElementById("mdp");
 const boiteMessage = document.getElementById("message");
 const emailConnecte = document.getElementById("email-connecte");
 const boutons = document.querySelectorAll("button");
+const listeProduits = document.getElementById("liste-produits");
+const nbProduits = document.getElementById("nb-produits");
+const formProduit = document.getElementById("form-produit");
+const btnAjout = document.getElementById("btn-ajout");
+
+let uidCourant = null;
+let arreterEcoute = null;
 
 const erreurs = {
   "auth/invalid-email": "Adresse email invalide.",
@@ -209,7 +263,9 @@ const erreurs = {
   "auth/wrong-password": "Mot de passe incorrect.",
   "auth/too-many-requests": "Trop d'essais. Attends un peu puis réessaie.",
   "auth/network-request-failed": "Problème de connexion internet.",
-  "auth/missing-email": "Entre ton adresse email."
+  "auth/missing-email": "Entre ton adresse email.",
+  "permission-denied": "Accès refusé par les règles Firestore.",
+  "unavailable": "Problème de connexion internet."
 };
 
 function afficher(texte, type) {
@@ -230,6 +286,131 @@ function occupe(etat) {
 function texteErreur(e) {
   return erreurs[e.code] || ("Erreur : " + (e.code || e.message));
 }
+
+function dessinerProduits(docs) {
+  listeProduits.textContent = "";
+  nbProduits.textContent = String(docs.length);
+
+  if (docs.length === 0) {
+    const vide = document.createElement("div");
+    vide.className = "carte";
+    const p = document.createElement("p");
+    p.textContent = "Aucun produit pour le moment. Ajoute le premier avec le formulaire ci-dessus.";
+    vide.appendChild(p);
+    listeProduits.appendChild(vide);
+    return;
+  }
+
+  docs.forEach(function (d) {
+    const donnees = d.data();
+    const carte = document.createElement("div");
+    carte.className = "produit";
+
+    const titre = document.createElement("h3");
+    titre.textContent = donnees.nom || "(sans nom)";
+    carte.appendChild(titre);
+
+    if (donnees.prix) {
+      const p = document.createElement("p");
+      p.className = "prix";
+      p.textContent = donnees.prix;
+      carte.appendChild(p);
+    }
+    if (donnees.description) {
+      const p = document.createElement("p");
+      p.textContent = donnees.description;
+      carte.appendChild(p);
+    }
+    if (donnees.cible) {
+      const p = document.createElement("p");
+      p.textContent = "Pour : " + donnees.cible;
+      carte.appendChild(p);
+    }
+    if (donnees.lien && /^https?:\/\//i.test(donnees.lien)) {
+      const p = document.createElement("p");
+      const a = document.createElement("a");
+      a.href = donnees.lien;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = donnees.lien;
+      p.appendChild(a);
+      carte.appendChild(p);
+    }
+
+    const sup = document.createElement("button");
+    sup.type = "button";
+    sup.className = "danger";
+    sup.textContent = "Supprimer";
+    sup.addEventListener("click", async function () {
+      if (!confirm("Supprimer ce produit ?")) { return; }
+      effacerMessage();
+      try {
+        await deleteDoc(doc(db, "users", uidCourant, "produits", d.id));
+      } catch (e) {
+        afficher(texteErreur(e), "erreur");
+      }
+    });
+    carte.appendChild(sup);
+
+    listeProduits.appendChild(carte);
+  });
+}
+
+function demarrerEcoute(uid) {
+  const requete = query(
+    collection(db, "users", uid, "produits"),
+    orderBy("creeLe", "desc")
+  );
+  arreterEcoute = onSnapshot(
+    requete,
+    function (resultat) {
+      dessinerProduits(resultat.docs);
+    },
+    function (e) {
+      afficher(texteErreur(e), "erreur");
+    }
+  );
+}
+
+function arreterTout() {
+  if (arreterEcoute) {
+    arreterEcoute();
+    arreterEcoute = null;
+  }
+  uidCourant = null;
+  listeProduits.textContent = "";
+  nbProduits.textContent = "0";
+}
+
+formProduit.addEventListener("submit", async function (ev) {
+  ev.preventDefault();
+  effacerMessage();
+  if (!uidCourant) {
+    afficher("Tu n'es pas connecté.", "erreur");
+    return;
+  }
+  const nom = document.getElementById("p-nom").value.trim();
+  if (!nom) {
+    afficher("Entre le nom du produit.", "erreur");
+    return;
+  }
+  btnAjout.disabled = true;
+  try {
+    await addDoc(collection(db, "users", uidCourant, "produits"), {
+      nom: nom,
+      description: document.getElementById("p-desc").value.trim(),
+      prix: document.getElementById("p-prix").value.trim(),
+      lien: document.getElementById("p-lien").value.trim(),
+      cible: document.getElementById("p-cible").value.trim(),
+      creeLe: serverTimestamp()
+    });
+    formProduit.reset();
+    afficher("Produit enregistré.", "ok");
+  } catch (e) {
+    afficher(texteErreur(e), "erreur");
+  }
+  btnAjout.disabled = false;
+});
 
 document.getElementById("formulaire").addEventListener("submit", async function (ev) {
   ev.preventDefault();
@@ -284,12 +465,15 @@ document.getElementById("btn-deconnexion").addEventListener("click", async funct
 });
 
 onAuthStateChanged(auth, function (utilisateur) {
+  arreterTout();
   if (utilisateur) {
+    uidCourant = utilisateur.uid;
     emailConnecte.textContent = utilisateur.email;
     vueConnexion.hidden = true;
     vueTableau.hidden = false;
     document.body.classList.add("connecte");
     effacerMessage();
+    demarrerEcoute(utilisateur.uid);
   } else {
     vueTableau.hidden = true;
     vueConnexion.hidden = false;
