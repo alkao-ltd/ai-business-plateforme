@@ -18,6 +18,9 @@
     justify-content: center;
     padding: 16px;
   }
+  body.connecte {
+    align-items: flex-start;
+  }
   main {
     width: 100%;
     max-width: 380px;
@@ -25,6 +28,9 @@
     border-radius: 12px;
     padding: 24px;
     box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  }
+  body.connecte main {
+    max-width: 640px;
   }
   h1 { margin: 0 0 4px; font-size: 22px; text-align: center; }
   .sous-titre { margin: 0 0 20px; text-align: center; color: #5b6475; font-size: 14px; }
@@ -58,14 +64,59 @@
   }
   .erreur { background: #fde8e8; color: #9b1c1c; }
   .ok { background: #e3f6e8; color: #166534; }
+
+  .entete {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #e5e9f2;
+  }
+  .entete h2 { margin: 0; font-size: 20px; }
+  .entete .qui { margin: 2px 0 0; font-size: 13px; color: #5b6475; word-break: break-all; }
+  .entete button { width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
+
+  .titre-section { margin: 20px 0 8px; font-size: 16px; }
+  .chiffres {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .chiffre {
+    background: #f2f4f8;
+    border-radius: 10px;
+    padding: 12px 6px;
+    text-align: center;
+  }
+  .chiffre strong { display: block; font-size: 24px; }
+  .chiffre span { font-size: 12px; color: #5b6475; }
+
+  .carte {
+    background: #f9fafc;
+    border: 1px dashed #c3c9d6;
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 8px;
+  }
+  .carte h3 { margin: 0 0 4px; font-size: 15px; }
+  .carte p { margin: 0; font-size: 14px; color: #5b6475; }
+  .bientot {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 2px 8px;
+    font-size: 12px;
+    background: #e5e9f2;
+    border-radius: 20px;
+    color: #1d2433;
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>AI Business</h1>
-  <p class="sous-titre">Plateforme de vente avec agents IA</p>
-
   <section id="vue-connexion">
+    <h1>AI Business</h1>
+    <p class="sous-titre">Plateforme de vente avec agents IA</p>
     <form id="formulaire">
       <label for="email">Adresse email</label>
       <input id="email" type="email" autocomplete="email" required>
@@ -80,10 +131,38 @@
   </section>
 
   <section id="vue-tableau" hidden>
-    <p>Connecté avec :</p>
-    <p><strong id="email-connecte"></strong></p>
-    <p>Le tableau de bord arrivera à l'étape 2.</p>
-    <button type="button" id="btn-deconnexion" class="secondaire">Se déconnecter</button>
+    <div class="entete">
+      <div>
+        <h2>Tableau de bord</h2>
+        <p class="qui" id="email-connecte"></p>
+      </div>
+      <button type="button" id="btn-deconnexion" class="secondaire">Quitter</button>
+    </div>
+
+    <h3 class="titre-section">Aperçu</h3>
+    <div class="chiffres">
+      <div class="chiffre"><strong>0</strong><span>Produits</span></div>
+      <div class="chiffre"><strong>0</strong><span>Prospects</span></div>
+      <div class="chiffre"><strong>0</strong><span>Messages</span></div>
+    </div>
+
+    <h3 class="titre-section">Mes produits</h3>
+    <div class="carte">
+      <p>Aucun produit pour le moment.</p>
+      <span class="bientot">Ajout de produits : étape 3</span>
+    </div>
+
+    <h3 class="titre-section">Mes agents IA</h3>
+    <div class="carte">
+      <h3>Agent commercial</h3>
+      <p>Analyse du produit, prospects, messages.</p>
+      <span class="bientot">Bientôt</span>
+    </div>
+    <div class="carte">
+      <h3>Agent publicitaire</h3>
+      <p>Textes, affiches, scripts vidéo.</p>
+      <span class="bientot">Bientôt</span>
+    </div>
   </section>
 
   <div id="message" hidden></div>
@@ -209,13 +288,15 @@ onAuthStateChanged(auth, function (utilisateur) {
     emailConnecte.textContent = utilisateur.email;
     vueConnexion.hidden = true;
     vueTableau.hidden = false;
+    document.body.classList.add("connecte");
     effacerMessage();
   } else {
     vueTableau.hidden = true;
     vueConnexion.hidden = false;
+    document.body.classList.remove("connecte");
     champMdp.value = "";
   }
 });
 </script>
 </body>
-  </html>
+       </html>
