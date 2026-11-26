@@ -56,6 +56,7 @@
   .principal { background: #2563eb; color: #ffffff; }
   .secondaire { background: #e5e9f2; color: #1d2433; }
   .danger { background: #fde8e8; color: #9b1c1c; }
+  .ia { background: #e8f0fe; color: #1d4ed8; }
   .lien { background: none; color: #2563eb; font-size: 14px; margin-top: 8px; }
   button:disabled { opacity: 0.6; cursor: not-allowed; }
   #message {
@@ -125,7 +126,17 @@
   .produit p { margin: 4px 0 0; font-size: 14px; color: #5b6475; word-break: break-word; }
   .produit .prix { color: #166534; font-weight: bold; }
   .produit a { color: #2563eb; word-break: break-all; font-size: 14px; }
-  .produit button { margin-top: 10px; padding: 8px; font-size: 14px; }
+  .produit button { margin-top: 10px; padding: 10px; font-size: 14px; }
+  .resultat-ia {
+    margin-top: 10px;
+    padding: 12px;
+    background: #f2f6ff;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 </style>
 </head>
 <body>
@@ -190,8 +201,8 @@
     <h3 class="titre-section">Mes agents IA</h3>
     <div class="carte">
       <h3>Agent commercial</h3>
-      <p>Analyse du produit, prospects, messages.</p>
-      <span class="bientot">Bientôt</span>
+      <p>Analyse du produit disponible sur chaque produit. Prospects et messages : bientôt.</p>
+      <span class="bientot">En cours</span>
     </div>
     <div class="carte">
       <h3>Agent publicitaire</h3>
@@ -234,6 +245,8 @@ const firebaseConfig = {
   appId: "1:187682280428:web:742a58a4e2cd96428f26c9"
 };
 
+const URL_WORKER = "https://ai-business-plateforme.alkaolimited.workers.dev";
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -252,6 +265,7 @@ const btnAjout = document.getElementById("btn-ajout");
 
 let uidCourant = null;
 let arreterEcoute = null;
+let analyses = {};
 
 const erreurs = {
   "auth/invalid-email": "Adresse email invalide.",
@@ -285,6 +299,46 @@ function occupe(etat) {
 
 function texteErreur(e) {
   return erreurs[e.code] || ("Erreur : " + (e.code || e.message));
+}
+
+async function analyserProduit(donnees) {
+  const utilisateur = auth.currentUser;
+  if (!utilisateur) {
+    throw new Error("Tu n'es pas connecté.");
+  }
+  const jeton = await utilisateur.getIdToken();
+  let reponse;
+  try {
+    reponse = await fetch(URL_WORKER + "/analyse", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + jeton
+      },
+      body: JSON.stringify({
+        nom: donnees.nom || "",
+        description: donnees.description || "",
+        prix: donnees.prix || "",
+        cible: donnees.cible || "",
+        lien: donnees.lien || ""
+      })
+    });
+  } catch (e) {
+    throw new Error("Problème de connexion avec le serveur.");
+  }
+  let corps = null;
+  try {
+    corps = await reponse.json();
+  } catch (e) {
+    corps = null;
+  }
+  if (!reponse.ok) {
+    throw new Error((corps && corps.erreur) || ("Erreur du serveur (" + reponse.status + ")."));
+  }
+  if (!corps || !corps.resultat) {
+    throw new Error("Réponse vide du serveur.");
+  }
+  return corps.resultat;
 }
 
 function dessinerProduits(docs) {
@@ -337,6 +391,36 @@ function dessinerProduits(docs) {
       carte.appendChild(p);
     }
 
+    const zoneIA = document.createElement("div");
+    zoneIA.className = "resultat-ia";
+    if (analyses[d.id]) {
+      zoneIA.textContent = analyses[d.id];
+    } else {
+      zoneIA.hidden = true;
+    }
+
+    const btnIA = document.createElement("button");
+    btnIA.type = "button";
+    btnIA.className = "ia";
+    btnIA.textContent = "Analyser avec l'IA";
+    btnIA.addEventListener("click", async function () {
+      effacerMessage();
+      btnIA.disabled = true;
+      btnIA.textContent = "Analyse en cours...";
+      try {
+        const texte = await analyserProduit(donnees);
+        analyses[d.id] = texte;
+        zoneIA.textContent = texte;
+        zoneIA.hidden = false;
+      } catch (e) {
+        afficher(e.message, "erreur");
+      }
+      btnIA.disabled = false;
+      btnIA.textContent = "Analyser avec l'IA";
+    });
+    carte.appendChild(btnIA);
+    carte.appendChild(zoneIA);
+
     const sup = document.createElement("button");
     sup.type = "button";
     sup.className = "danger";
@@ -346,6 +430,7 @@ function dessinerProduits(docs) {
       effacerMessage();
       try {
         await deleteDoc(doc(db, "users", uidCourant, "produits", d.id));
+        delete analyses[d.id];
       } catch (e) {
         afficher(texteErreur(e), "erreur");
       }
@@ -378,6 +463,7 @@ function arreterTout() {
     arreterEcoute = null;
   }
   uidCourant = null;
+  analyses = {};
   listeProduits.textContent = "";
   nbProduits.textContent = "0";
 }
@@ -483,4 +569,4 @@ onAuthStateChanged(auth, function (utilisateur) {
 });
 </script>
 </body>
-       </html>
+ </html>
