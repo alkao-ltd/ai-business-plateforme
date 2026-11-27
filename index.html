@@ -57,6 +57,7 @@
   .secondaire { background: #e5e9f2; color: #1d2433; }
   .danger { background: #fde8e8; color: #9b1c1c; }
   .ia { background: #e8f0fe; color: #1d4ed8; }
+  .pub { background: #fff1e0; color: #b45309; }
   .lien { background: none; color: #2563eb; font-size: 14px; margin-top: 8px; }
   button:disabled { opacity: 0.6; cursor: not-allowed; }
   #message {
@@ -137,6 +138,7 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
+  .resultat-pub { background: #fff8ef; }
 </style>
 </head>
 <body>
@@ -201,13 +203,13 @@
     <h3 class="titre-section">Mes agents IA</h3>
     <div class="carte">
       <h3>Agent commercial</h3>
-      <p>Analyse du produit disponible sur chaque produit. Prospects et messages : bientôt.</p>
+      <p>Analyse du produit disponible sur chaque produit. Prospects et suivi : bientôt.</p>
       <span class="bientot">En cours</span>
     </div>
     <div class="carte">
       <h3>Agent publicitaire</h3>
-      <p>Textes, affiches, scripts vidéo.</p>
-      <span class="bientot">Bientôt</span>
+      <p>Script TikTok disponible sur chaque produit. Facebook, Instagram, WhatsApp : bientôt.</p>
+      <span class="bientot">En cours</span>
     </div>
   </section>
 
@@ -266,6 +268,7 @@ const btnAjout = document.getElementById("btn-ajout");
 let uidCourant = null;
 let arreterEcoute = null;
 let analyses = {};
+let scriptsTikTok = {};
 
 const erreurs = {
   "auth/invalid-email": "Adresse email invalide.",
@@ -301,7 +304,15 @@ function texteErreur(e) {
   return erreurs[e.code] || ("Erreur : " + (e.code || e.message));
 }
 
-async function analyserProduit(donnees) {
+function nettoyerTexte(texte) {
+  return String(texte || "")
+    .replace(/\*\*/g, "")
+    .replace(/^\s*\*\s+/gm, "• ")
+    .replace(/^#{1,6}\s+/gm, "")
+    .trim();
+}
+
+async function appelerWorker(route, corps) {
   const utilisateur = auth.currentUser;
   if (!utilisateur) {
     throw new Error("Tu n'es pas connecté.");
@@ -309,36 +320,90 @@ async function analyserProduit(donnees) {
   const jeton = await utilisateur.getIdToken();
   let reponse;
   try {
-    reponse = await fetch(URL_WORKER + "/analyse", {
+    reponse = await fetch(URL_WORKER + route, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": "Bearer " + jeton
       },
-      body: JSON.stringify({
-        nom: donnees.nom || "",
-        description: donnees.description || "",
-        prix: donnees.prix || "",
-        cible: donnees.cible || "",
-        lien: donnees.lien || ""
-      })
+      body: JSON.stringify(corps)
     });
   } catch (e) {
     throw new Error("Problème de connexion avec le serveur.");
   }
-  let corps = null;
+  let donnees = null;
   try {
-    corps = await reponse.json();
+    donnees = await reponse.json();
   } catch (e) {
-    corps = null;
+    donnees = null;
   }
   if (!reponse.ok) {
-    throw new Error((corps && corps.erreur) || ("Erreur du serveur (" + reponse.status + ")."));
+    throw new Error((donnees && donnees.erreur) || ("Erreur du serveur (" + reponse.status + ")."));
   }
-  if (!corps || !corps.resultat) {
+  if (!donnees || !donnees.resultat) {
     throw new Error("Réponse vide du serveur.");
   }
-  return corps.resultat;
+  return nettoyerTexte(donnees.resultat);
+}
+
+function fiche(donnees) {
+  return {
+    nom: donnees.nom || "",
+    description: donnees.description || "",
+    prix: donnees.prix || "",
+    cible: donnees.cible || "",
+    lien: donnees.lien || ""
+  };
+}
+
+function ajouterBlocIA(carte, options) {
+  const zone = document.createElement("div");
+  zone.className = "resultat-ia " + (options.classeZone || "");
+  const btnCopier = document.createElement("button");
+  btnCopier.type = "button";
+  btnCopier.className = "secondaire";
+  btnCopier.textContent = "Copier le texte";
+
+  if (options.cache[options.id]) {
+    zone.textContent = options.cache[options.id];
+  } else {
+    zone.hidden = true;
+    btnCopier.hidden = true;
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = options.classeBouton;
+  btn.textContent = options.libelle;
+  btn.addEventListener("click", async function () {
+    effacerMessage();
+    btn.disabled = true;
+    btn.textContent = "Écriture en cours...";
+    try {
+      const texte = await options.appel();
+      options.cache[options.id] = texte;
+      zone.textContent = texte;
+      zone.hidden = false;
+      btnCopier.hidden = false;
+    } catch (e) {
+      afficher(e.message, "erreur");
+    }
+    btn.disabled = false;
+    btn.textContent = options.libelle;
+  });
+
+  btnCopier.addEventListener("click", async function () {
+    try {
+      await navigator.clipboard.writeText(zone.textContent);
+      afficher("Texte copié.", "ok");
+    } catch (e) {
+      afficher("Copie impossible : appuie longuement sur le texte pour le copier.", "erreur");
+    }
+  });
+
+  carte.appendChild(btn);
+  carte.appendChild(zone);
+  carte.appendChild(btnCopier);
 }
 
 function dessinerProduits(docs) {
@@ -391,35 +456,29 @@ function dessinerProduits(docs) {
       carte.appendChild(p);
     }
 
-    const zoneIA = document.createElement("div");
-    zoneIA.className = "resultat-ia";
-    if (analyses[d.id]) {
-      zoneIA.textContent = analyses[d.id];
-    } else {
-      zoneIA.hidden = true;
-    }
-
-    const btnIA = document.createElement("button");
-    btnIA.type = "button";
-    btnIA.className = "ia";
-    btnIA.textContent = "Analyser avec l'IA";
-    btnIA.addEventListener("click", async function () {
-      effacerMessage();
-      btnIA.disabled = true;
-      btnIA.textContent = "Analyse en cours...";
-      try {
-        const texte = await analyserProduit(donnees);
-        analyses[d.id] = texte;
-        zoneIA.textContent = texte;
-        zoneIA.hidden = false;
-      } catch (e) {
-        afficher(e.message, "erreur");
+    ajouterBlocIA(carte, {
+      id: d.id,
+      cache: analyses,
+      libelle: "Analyser avec l'IA",
+      classeBouton: "ia",
+      classeZone: "",
+      appel: function () {
+        return appelerWorker("/analyse", fiche(donnees));
       }
-      btnIA.disabled = false;
-      btnIA.textContent = "Analyser avec l'IA";
     });
-    carte.appendChild(btnIA);
-    carte.appendChild(zoneIA);
+
+    ajouterBlocIA(carte, {
+      id: d.id,
+      cache: scriptsTikTok,
+      libelle: "Script TikTok",
+      classeBouton: "pub",
+      classeZone: "resultat-pub",
+      appel: function () {
+        const corps = fiche(donnees);
+        corps.canal = "tiktok";
+        return appelerWorker("/contenu", corps);
+      }
+    });
 
     const sup = document.createElement("button");
     sup.type = "button";
@@ -431,6 +490,7 @@ function dessinerProduits(docs) {
       try {
         await deleteDoc(doc(db, "users", uidCourant, "produits", d.id));
         delete analyses[d.id];
+        delete scriptsTikTok[d.id];
       } catch (e) {
         afficher(texteErreur(e), "erreur");
       }
@@ -464,6 +524,7 @@ function arreterTout() {
   }
   uidCourant = null;
   analyses = {};
+  scriptsTikTok = {};
   listeProduits.textContent = "";
   nbProduits.textContent = "0";
 }
@@ -569,4 +630,4 @@ onAuthStateChanged(auth, function (utilisateur) {
 });
 </script>
 </body>
- </html>
+       </html>
