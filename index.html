@@ -231,6 +231,7 @@ import {
   collection,
   addDoc,
   deleteDoc,
+  updateDoc,
   doc,
   query,
   orderBy,
@@ -267,8 +268,6 @@ const btnAjout = document.getElementById("btn-ajout");
 
 let uidCourant = null;
 let arreterEcoute = null;
-let analyses = {};
-let scriptsTikTok = {};
 
 const erreurs = {
   "auth/invalid-email": "Adresse email invalide.",
@@ -364,8 +363,8 @@ function ajouterBlocIA(carte, options) {
   btnCopier.className = "secondaire";
   btnCopier.textContent = "Copier le texte";
 
-  if (options.cache[options.id]) {
-    zone.textContent = options.cache[options.id];
+  if (options.texte) {
+    zone.textContent = options.texte;
   } else {
     zone.hidden = true;
     btnCopier.hidden = true;
@@ -374,22 +373,34 @@ function ajouterBlocIA(carte, options) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = options.classeBouton;
-  btn.textContent = options.libelle;
+  btn.textContent = options.texte ? options.libelleRefaire : options.libelle;
   btn.addEventListener("click", async function () {
     effacerMessage();
     btn.disabled = true;
     btn.textContent = "Écriture en cours...";
+    let texte = "";
     try {
-      const texte = await options.appel();
-      options.cache[options.id] = texte;
-      zone.textContent = texte;
-      zone.hidden = false;
-      btnCopier.hidden = false;
+      texte = await options.appel();
     } catch (e) {
       afficher(e.message, "erreur");
+      btn.disabled = false;
+      btn.textContent = options.texte ? options.libelleRefaire : options.libelle;
+      return;
+    }
+    zone.textContent = texte;
+    zone.hidden = false;
+    btnCopier.hidden = false;
+    try {
+      const maj = {};
+      maj[options.champ] = texte;
+      maj[options.champ + "Le"] = serverTimestamp();
+      await updateDoc(doc(db, "users", uidCourant, "produits", options.docId), maj);
+      afficher("Texte enregistré.", "ok");
+    } catch (e) {
+      afficher("Texte écrit, mais non enregistré : " + texteErreur(e), "erreur");
     }
     btn.disabled = false;
-    btn.textContent = options.libelle;
+    btn.textContent = options.libelleRefaire;
   });
 
   btnCopier.addEventListener("click", async function () {
@@ -457,9 +468,11 @@ function dessinerProduits(docs) {
     }
 
     ajouterBlocIA(carte, {
-      id: d.id,
-      cache: analyses,
+      docId: d.id,
+      champ: "analyse",
+      texte: donnees.analyse || "",
       libelle: "Analyser avec l'IA",
+      libelleRefaire: "Refaire l'analyse",
       classeBouton: "ia",
       classeZone: "",
       appel: function () {
@@ -468,9 +481,11 @@ function dessinerProduits(docs) {
     });
 
     ajouterBlocIA(carte, {
-      id: d.id,
-      cache: scriptsTikTok,
+      docId: d.id,
+      champ: "scriptTikTok",
+      texte: donnees.scriptTikTok || "",
       libelle: "Script TikTok",
+      libelleRefaire: "Refaire le script TikTok",
       classeBouton: "pub",
       classeZone: "resultat-pub",
       appel: function () {
@@ -489,8 +504,6 @@ function dessinerProduits(docs) {
       effacerMessage();
       try {
         await deleteDoc(doc(db, "users", uidCourant, "produits", d.id));
-        delete analyses[d.id];
-        delete scriptsTikTok[d.id];
       } catch (e) {
         afficher(texteErreur(e), "erreur");
       }
@@ -523,8 +536,6 @@ function arreterTout() {
     arreterEcoute = null;
   }
   uidCourant = null;
-  analyses = {};
-  scriptsTikTok = {};
   listeProduits.textContent = "";
   nbProduits.textContent = "0";
 }
@@ -630,4 +641,4 @@ onAuthStateChanged(auth, function (utilisateur) {
 });
 </script>
 </body>
- </html>
+       </html>
